@@ -96,10 +96,6 @@ async def chat_completions(request: Request):
         }
 
     except Exception as e:
-        print("Exception:", str(e))
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-    except Exception as e:
-        print("Exception:", str(e))
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        error_trace = traceback.format_exc()
+        print("Exception:", error_trace)
+        return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
