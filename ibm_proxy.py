@@ -35,7 +35,7 @@ async def call_ibm_watsonx(prompt):
         iam_token = token_res.json()["access_token"]
 
         # Step 2: Call Watsonx with access token
-        url = "https://us-south.ml.cloud.ibm.com/ml/v1/text/generation"
+        url = "https://us-south.ml.cloud.ibm.com/ml/v1/text/generation?version=2024-05-14"
         headers = {
             "Authorization": f"Bearer {iam_token}",
             "Content-Type": "application/json",
