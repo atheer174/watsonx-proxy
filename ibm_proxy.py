@@ -146,31 +146,31 @@ async def call_ibm_watsonx(prompt):
 #                         break
 #                 except asyncio.TimeoutError:
 #                     break
-    @app.post("/v1/chat/completions")
-    async def chat_completions(request: Request):
-        async def stream_response():
-            yield {
-                "id": "test-123",
-                "object": "chat.completion.chunk",
-                "model": "debug-model",
-                "choices": [{"delta": {"role": "assistant"}}]
-            }
-            yield {
-                "object": "chat.completion.chunk",
-                "choices": [{"delta": {"content": "Hi"}}]
-            }
-            await asyncio.sleep(0.2)
-            yield {
-                "object": "chat.completion.chunk",
-                "choices": [{"delta": {"content": " there"}}]
-            }
-            await asyncio.sleep(0.2)
-            yield {
-                "object": "chat.completion.chunk",
-                "choices": [{"finish_reason": "stop"}]
-            }
-    
-        return EventSourceResponse(stream_response(), media_type="text/event-stream")
+@app.post("/v1/chat/completions")
+async def chat_completions(request: Request):
+    async def stream_response():
+        yield {
+            "id": "test-123",
+            "object": "chat.completion.chunk",
+            "model": "debug-model",
+            "choices": [{"delta": {"role": "assistant"}}]
+        }
+        yield {
+            "object": "chat.completion.chunk",
+            "choices": [{"delta": {"content": "Hi"}}]
+        }
+        await asyncio.sleep(0.2)
+        yield {
+            "object": "chat.completion.chunk",
+            "choices": [{"delta": {"content": " there"}}]
+        }
+        await asyncio.sleep(0.2)
+        yield {
+            "object": "chat.completion.chunk",
+            "choices": [{"finish_reason": "stop"}]
+        }
+
+    return EventSourceResponse(stream_response(), media_type="text/event-stream")
 
         # return EventSourceResponse(stream_response(), media_type="text/event-stream")
 
