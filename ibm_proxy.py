@@ -92,57 +92,57 @@ async def chat_completions(request: Request):
 
         async def produce_chunks():
             try:
-                await queue.put(json.dumps({
+                await queue.put({
                     "id": "chatcmpl-stream",
                     "object": "chat.completion.chunk",
                     "model": body.get("model", MODEL_ID),
                     "choices": [{"delta": {"role": "assistant"}}]
-                }) + "\n\n")
+                })
 
-                await queue.put(json.dumps({
+                await queue.put({
                     "choices": [{"delta": {"content": "..."}}],
                     "object": "chat.completion.chunk"
-                }) + "\n\n")
+                })
 
                 ibm_response = await call_ibm_watsonx(prompt)
 
                 if "results" not in ibm_response:
-                    await queue.put(json.dumps({
+                    await queue.put({
                         "choices": [{"delta": {"content": "[Error from IBM Watsonx]"}}],
                         "object": "chat.completion.chunk"
-                    }) + "\n\n")
-                    await queue.put(json.dumps({
+                    })
+                    await queue.put({
                         "choices": [{"finish_reason": "stop"}],
                         "object": "chat.completion.chunk"
-                    }) + "\n\n")
+                    })
                     return
 
                 full_text = ibm_response["results"][0].get("generated_text", "").strip()
 
                 for word in full_text.split():
                     await asyncio.sleep(0.04)
-                    await queue.put(json.dumps({
+                    await queue.put({
                         "choices": [{"delta": {"content": word + " "}}],
                         "object": "chat.completion.chunk"
-                    }) + "\n\n")
+                    })
 
-                await queue.put(json.dumps({
+                await queue.put({
                     "choices": [{"finish_reason": "stop"}],
                     "object": "chat.completion.chunk"
-                }) + "\n\n")
+                })
 
             except Exception as e:
-                await queue.put(json.dumps({
+                await queue.put({
                     "error": str(e)
-                }) + "\n\n")
+                })
 
         async def stream_response():
             task = asyncio.create_task(produce_chunks())
             while True:
                 try:
                     chunk = await asyncio.wait_for(queue.get(), timeout=30)
-                    yield f"data: {chunk}\n\n"
-                    if '"finish_reason": "stop"' in chunk:
+                    yield chunk
+                    if "finish_reason" in str(chunk):
                         break
                 except asyncio.TimeoutError:
                     break
