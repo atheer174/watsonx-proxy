@@ -5,6 +5,16 @@ import os
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 IBM_API_KEY = os.environ["IBM_API_KEY"]
 PROJECT_ID = os.environ["PROJECT_ID"]
 MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-2-70b-chat")
