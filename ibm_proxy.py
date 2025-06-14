@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import httpx
 import os
+import time
 
 app = FastAPI()
 
@@ -74,6 +75,8 @@ async def chat_completions(request: Request):
     return {
         "id": "chatcmpl-ibm",
         "object": "chat.completion",
+        "created": int(time.time()),
+        "model": body.get("model", MODEL_ID),
         "choices": [{
             "index": 0,
             "message": {
@@ -82,5 +85,9 @@ async def chat_completions(request: Request):
             },
             "finish_reason": "stop"
         }],
-        "model": body.get("model", MODEL_ID)
+        "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
     }
