@@ -89,9 +89,9 @@ async def chat_completions(request: Request):
                 "finish_reason": "stop"
             }],
             "usage": {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0
+                "prompt_tokens": 10,
+                "completion_tokens": 15,
+                "total_tokens": 25
             }
         }
 
