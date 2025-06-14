@@ -96,6 +96,7 @@ async def chat_completions(request: Request):
 
         # Stream simulation for Cursor
         async def fake_stream():
+            # Immediately send initial assistant role
             yield {
                 "id": "chatcmpl-stream",
                 "object": "chat.completion.chunk",
@@ -103,6 +104,13 @@ async def chat_completions(request: Request):
                 "choices": [{"delta": {"role": "assistant"}}]
             }
         
+            # Yield one dummy token early to avoid timeout
+            yield {
+                "choices": [{"delta": {"content": ""}}],
+                "object": "chat.completion.chunk"
+            }
+        
+            # Now stream real tokens
             for word in full_text.split():
                 await asyncio.sleep(0.05)
                 yield {
@@ -110,7 +118,11 @@ async def chat_completions(request: Request):
                     "object": "chat.completion.chunk"
                 }
         
-            yield {"choices": [{"finish_reason": "stop"}], "object": "chat.completion.chunk"}
+            yield {
+                "choices": [{"finish_reason": "stop"}],
+                "object": "chat.completion.chunk"
+            }
+
 
         return EventSourceResponse(fake_stream(), media_type="text/event-stream")
 
