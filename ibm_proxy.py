@@ -62,8 +62,7 @@ async def chat_completions(request: Request):
         body = await request.json()
 
         # Reject streaming if requested
-        if body.get("stream") == True:
-            return JSONResponse(status_code=400, content={"error": "Streaming not supported"})
+        body["stream"] = False
 
         messages = body.get("messages", [])
         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
