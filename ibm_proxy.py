@@ -57,11 +57,6 @@ async def call_ibm_watsonx(prompt):
 
 
 @app.post("/v1/chat/completions")
-import time
-from fastapi import Request
-from fastapi.responses import JSONResponse
-
-@app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     try:
         body = await request.json()
