@@ -96,7 +96,7 @@ async def chat_completions(request: Request):
 
         # Stream simulation for Cursor
         async def fake_stream():
-            # Initial role chunk
+            # Send role first
             yield {
                 "id": "chatcmpl-stream",
                 "object": "chat.completion.chunk",
@@ -104,18 +104,27 @@ async def chat_completions(request: Request):
                 "choices": [{"delta": {"role": "assistant"}}]
             }
         
-            # Immediate content to prevent timeout
+            # Send dummy visible token immediately to prevent timeout
             yield {
-                "choices": [{"delta": {"content": "Hi"}}],
+                "choices": [{"delta": {"content": "Thinking..."}}],
                 "object": "chat.completion.chunk"
             }
         
-            await asyncio.sleep(0.1)  # just for realism
+            # Now call Watsonx while Cursor is busy rendering
+            ibm_response = await call_ibm_watsonx(prompt)
+        
+            if "results" not in ibm_response:
+                yield {
+                    "choices": [{"delta": {"content": "[Error] IBM response invalid"}}],
+                    "object": "chat.completion.chunk"
+                }
+                yield {"choices": [{"finish_reason": "stop"}], "object": "chat.completion.chunk"}
+                return
+        
+            full_text = ibm_response["results"][0].get("generated_text", "").strip()
         
             for word in full_text.split():
-                if word.lower() == "hi":
-                    continue  # skip duplicate
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.04)
                 yield {
                     "choices": [{"delta": {"content": word + " "}}],
                     "object": "chat.completion.chunk"
