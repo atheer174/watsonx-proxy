@@ -47,6 +47,10 @@ async def chat_completions(request: Request):
 
     try:
         ibm_response = await call_ibm_watsonx(prompt)
+        if "results" not in ibm_response:
+            print("Watsonx response:", ibm_response)
+            return JSONResponse(status_code=500, content={"error": f"Unexpected response: {ibm_response}"})
+
         generated_text = ibm_response["results"][0]["generated_text"]
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
