@@ -57,37 +57,45 @@ async def call_ibm_watsonx(prompt):
 
 
 @app.post("/v1/chat/completions")
+import time
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
-    body = await request.json()
-    messages = body.get("messages", [])
-    prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-
     try:
+        body = await request.json()
+        messages = body.get("messages", [])
+        prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+
         ibm_response = await call_ibm_watsonx(prompt)
+
         if "results" not in ibm_response:
-            print("Watsonx response:", ibm_response)
-            return JSONResponse(status_code=500, content={"error": f"Unexpected response: {ibm_response}"})
+            print("Watsonx error response:", ibm_response)
+            return JSONResponse(status_code=500, content={"error": str(ibm_response)})
 
-        generated_text = ibm_response["results"][0]["generated_text"]
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        generated_text = ibm_response["results"][0].get("generated_text", "")
 
-    return {
-        "id": "chatcmpl-ibm",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": body.get("model", MODEL_ID),
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": generated_text
-            },
-            "finish_reason": "stop"
-        }],
-        "usage": {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0
+        return {
+            "id": "chatcmpl-ibm",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": body.get("model", MODEL_ID),
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": generated_text
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            }
         }
-    }
+
+    except Exception as e:
+        print("Exception:", str(e))
+        return JSONResponse(status_code=500, content={"error": str(e)})
