@@ -1,13 +1,15 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
 import time
+import asyncio
+import traceback
+import json
 
 app = FastAPI()
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,7 +17,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 IBM_API_KEY = os.environ["IBM_API_KEY"]
 PROJECT_ID = os.environ["PROJECT_ID"]
@@ -56,56 +57,11 @@ async def call_ibm_watsonx(prompt):
         res = await client.post(url, json=payload, headers=headers)
         return res.json()
 
-
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     try:
         body = await request.json()
-        body.pop("stream", None)
-        # Reject streaming if requested
-        body["stream"] = False
-
-        messages = body.get("messages", [])
-        prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-
-        ibm_response = await call_ibm_watsonx(prompt)
-
-        if "results" not in ibm_response:
-            print("Watsonx error response:", ibm_response)
-            return JSONResponse(status_code=500, content={"error": str(ibm_response)})
-
-        generated_text = ibm_response["results"][0].get("generated_text", "").strip()
-
-        return {
-            "id": "chatcmpl-ibm",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": body.get("model", MODEL_ID),
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": generated_text
-                },
-                "finish_reason": "stop"
-            }],
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 15,
-                "total_tokens": 25
-            }
-        }
-
-    except Exception as e:
-        error_trace = traceback.format_exc()
-        print("Exception:", error_trace)
-        return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
-
-@app.post("/v1/chat/completions/stream")
-async def chat_completions_stream(request: Request):
-    try:
-        body = await request.json()
-        body.pop("stream", None)  # remove to avoid Watsonx errors
+        stream = body.pop("stream", False)
 
         messages = body.get("messages", [])
         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
@@ -117,6 +73,28 @@ async def chat_completions_stream(request: Request):
 
         full_text = ibm_response["results"][0].get("generated_text", "").strip()
 
+        if not stream:
+            return {
+                "id": "chatcmpl-ibm",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": body.get("model", MODEL_ID),
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": full_text
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 15,
+                    "total_tokens": 25
+                }
+            }
+
+        # Stream simulation for Cursor
         async def fake_stream():
             yield 'data: ' + json.dumps({
                 "id": "chatcmpl-stream",
@@ -126,7 +104,7 @@ async def chat_completions_stream(request: Request):
             }) + '\n\n'
 
             for word in full_text.split():
-                await asyncio.sleep(0.05)  # simulate real-time
+                await asyncio.sleep(0.05)
                 yield 'data: ' + json.dumps({
                     "choices": [{"delta": {"content": word + " "}}]
                 }) + '\n\n'
@@ -136,5 +114,6 @@ async def chat_completions_stream(request: Request):
         return EventSourceResponse(fake_stream())
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
+        error_trace = traceback.format_exc()
+        print("Exception:", error_trace)
+        return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
