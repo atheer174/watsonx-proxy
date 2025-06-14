@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
 import httpx
 import os
 import time
@@ -99,3 +100,41 @@ async def chat_completions(request: Request):
         error_trace = traceback.format_exc()
         print("Exception:", error_trace)
         return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
+
+@app.post("/v1/chat/completions/stream")
+async def chat_completions_stream(request: Request):
+    try:
+        body = await request.json()
+        body.pop("stream", None)  # remove to avoid Watsonx errors
+
+        messages = body.get("messages", [])
+        prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+
+        ibm_response = await call_ibm_watsonx(prompt)
+
+        if "results" not in ibm_response:
+            return JSONResponse(status_code=500, content={"error": str(ibm_response)})
+
+        full_text = ibm_response["results"][0].get("generated_text", "").strip()
+
+        async def fake_stream():
+            yield 'data: ' + json.dumps({
+                "id": "chatcmpl-stream",
+                "object": "chat.completion.chunk",
+                "model": body.get("model", MODEL_ID),
+                "choices": [{"delta": {"role": "assistant"}}]
+            }) + '\n\n'
+
+            for word in full_text.split():
+                await asyncio.sleep(0.05)  # simulate real-time
+                yield 'data: ' + json.dumps({
+                    "choices": [{"delta": {"content": word + " "}}]
+                }) + '\n\n'
+
+            yield 'data: [DONE]\n\n'
+
+        return EventSourceResponse(fake_stream())
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
