@@ -23,7 +23,6 @@ PROJECT_ID = os.environ["PROJECT_ID"]
 MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-2-70b-chat")
 
 async def call_ibm_watsonx(prompt):
-    # Step 1: Get access token from API key
     iam_url = "https://iam.cloud.ibm.com/identity/token"
     token_headers = {
         "Content-Type": "application/x-www-form-urlencoded"
@@ -37,7 +36,6 @@ async def call_ibm_watsonx(prompt):
         token_res = await client.post(iam_url, data=token_data, headers=token_headers)
         iam_token = token_res.json()["access_token"]
 
-        # Step 2: Call Watsonx with access token
         url = "https://us-south.ml.cloud.ibm.com/ml/v1/text/generation?version=2024-05-14"
         headers = {
             "Authorization": f"Bearer {iam_token}",
@@ -66,14 +64,9 @@ async def chat_completions(request: Request):
         messages = body.get("messages", [])
         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
 
-        ibm_response = await call_ibm_watsonx(prompt)
-
-        if "results" not in ibm_response:
-            return JSONResponse(status_code=500, content={"error": str(ibm_response)})
-
-        full_text = ibm_response["results"][0].get("generated_text", "").strip()
-
         if not stream:
+            ibm_response = await call_ibm_watsonx(prompt)
+            full_text = ibm_response["results"][0].get("generated_text", "").strip()
             return {
                 "id": "chatcmpl-ibm",
                 "object": "chat.completion",
@@ -94,48 +87,67 @@ async def chat_completions(request: Request):
                 }
             }
 
-        # Stream simulation for Cursor
-        async def fake_stream():
-            # Send role first
-            yield {
-                "id": "chatcmpl-stream",
-                "object": "chat.completion.chunk",
-                "model": body.get("model", MODEL_ID),
-                "choices": [{"delta": {"role": "assistant"}}]
-            }
-        
-            # Send dummy visible token immediately to prevent timeout
-            yield {
-                "choices": [{"delta": {"content": "Thinking..."}}],
-                "object": "chat.completion.chunk"
-            }
-        
-            # Now call Watsonx while Cursor is busy rendering
-            ibm_response = await call_ibm_watsonx(prompt)
-        
-            if "results" not in ibm_response:
-                yield {
-                    "choices": [{"delta": {"content": "[Error] IBM response invalid"}}],
-                    "object": "chat.completion.chunk"
-                }
-                yield {"choices": [{"finish_reason": "stop"}], "object": "chat.completion.chunk"}
-                return
-        
-            full_text = ibm_response["results"][0].get("generated_text", "").strip()
-        
-            for word in full_text.split():
-                await asyncio.sleep(0.04)
-                yield {
-                    "choices": [{"delta": {"content": word + " "}}],
-                    "object": "chat.completion.chunk"
-                }
-        
-            yield {
-                "choices": [{"finish_reason": "stop"}],
-                "object": "chat.completion.chunk"
-            }
+        # --- Streaming Fix with Queue ---
+        queue = asyncio.Queue()
 
-        return EventSourceResponse(fake_stream(), media_type="text/event-stream")
+        async def produce_chunks():
+            try:
+                await queue.put(json.dumps({
+                    "id": "chatcmpl-stream",
+                    "object": "chat.completion.chunk",
+                    "model": body.get("model", MODEL_ID),
+                    "choices": [{"delta": {"role": "assistant"}}]
+                }) + "\n\n")
+
+                await queue.put(json.dumps({
+                    "choices": [{"delta": {"content": "..."}}],
+                    "object": "chat.completion.chunk"
+                }) + "\n\n")
+
+                ibm_response = await call_ibm_watsonx(prompt)
+
+                if "results" not in ibm_response:
+                    await queue.put(json.dumps({
+                        "choices": [{"delta": {"content": "[Error from IBM Watsonx]"}}],
+                        "object": "chat.completion.chunk"
+                    }) + "\n\n")
+                    await queue.put(json.dumps({
+                        "choices": [{"finish_reason": "stop"}],
+                        "object": "chat.completion.chunk"
+                    }) + "\n\n")
+                    return
+
+                full_text = ibm_response["results"][0].get("generated_text", "").strip()
+
+                for word in full_text.split():
+                    await asyncio.sleep(0.04)
+                    await queue.put(json.dumps({
+                        "choices": [{"delta": {"content": word + " "}}],
+                        "object": "chat.completion.chunk"
+                    }) + "\n\n")
+
+                await queue.put(json.dumps({
+                    "choices": [{"finish_reason": "stop"}],
+                    "object": "chat.completion.chunk"
+                }) + "\n\n")
+
+            except Exception as e:
+                await queue.put(json.dumps({
+                    "error": str(e)
+                }) + "\n\n")
+
+        async def stream_response():
+            task = asyncio.create_task(produce_chunks())
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"data: {chunk}\n\n"
+                    if '"finish_reason": "stop"' in chunk:
+                        break
+                except asyncio.TimeoutError:
+                    break
+
+        return EventSourceResponse(stream_response(), media_type="text/event-stream")
 
     except Exception as e:
         error_trace = traceback.format_exc()
