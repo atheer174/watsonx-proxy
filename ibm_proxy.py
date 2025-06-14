@@ -60,7 +60,7 @@ async def call_ibm_watsonx(prompt):
 async def chat_completions(request: Request):
     try:
         body = await request.json()
-
+        body.pop("stream", None)
         # Reject streaming if requested
         body["stream"] = False
 
@@ -73,7 +73,7 @@ async def chat_completions(request: Request):
             print("Watsonx error response:", ibm_response)
             return JSONResponse(status_code=500, content={"error": str(ibm_response)})
 
-        generated_text = ibm_response["results"][0].get("generated_text", "")
+        generated_text = ibm_response["results"][0].get("generated_text", "").strip()
 
         return {
             "id": "chatcmpl-ibm",
