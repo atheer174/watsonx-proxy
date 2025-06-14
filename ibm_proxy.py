@@ -60,6 +60,11 @@ async def call_ibm_watsonx(prompt):
 async def chat_completions(request: Request):
     try:
         body = await request.json()
+
+        # Reject streaming if requested
+        if body.get("stream") == True:
+            return JSONResponse(status_code=400, content={"error": "Streaming not supported"})
+
         messages = body.get("messages", [])
         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
 
@@ -90,6 +95,11 @@ async def chat_completions(request: Request):
                 "total_tokens": 0
             }
         }
+
+    except Exception as e:
+        print("Exception:", str(e))
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
     except Exception as e:
         print("Exception:", str(e))
