@@ -96,24 +96,25 @@ async def chat_completions(request: Request):
 
         # Stream simulation for Cursor
         async def fake_stream():
-            print("🔁 stream started")
-        
+            # Initial role chunk
             yield {
                 "id": "chatcmpl-stream",
                 "object": "chat.completion.chunk",
                 "model": body.get("model", MODEL_ID),
                 "choices": [{"delta": {"role": "assistant"}}]
             }
-            print("✅ yielded assistant role")
         
+            # Immediate content to prevent timeout
             yield {
-                "choices": [{"delta": {"content": ""}}],
+                "choices": [{"delta": {"content": "Hi"}}],
                 "object": "chat.completion.chunk"
             }
-            print("✅ yielded heartbeat")
+        
+            await asyncio.sleep(0.1)  # just for realism
         
             for word in full_text.split():
-                print(f"📝 streaming: {word}")
+                if word.lower() == "hi":
+                    continue  # skip duplicate
                 await asyncio.sleep(0.05)
                 yield {
                     "choices": [{"delta": {"content": word + " "}}],
@@ -124,8 +125,6 @@ async def chat_completions(request: Request):
                 "choices": [{"finish_reason": "stop"}],
                 "object": "chat.completion.chunk"
             }
-            print("✅ stream ended")
-
 
         return EventSourceResponse(fake_stream(), media_type="text/event-stream")
 
