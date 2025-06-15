@@ -56,7 +56,7 @@ async def call_ibm_watsonx(prompt):
 async def chat_completions(request: Request):
     try:
         body = await request.json()
-        stream = body.pop("stream", False)
+        stream = body.get("stream", False)
         messages = body.get("messages", [])
         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
 
@@ -84,31 +84,28 @@ async def chat_completions(request: Request):
             }
 
         async def event_generator():
-            # Initial assistant role chunk
-            yield f"data: {json.dumps({'id': 'chatcmpl-stream', 'object': 'chat.completion.chunk', 'model': MODEL_ID, 'choices': [{'delta': {'role': 'assistant'}}]})}\n\n"
+            yield f"data: {json.dumps({'id': 'chatcmpl-stream','object': 'chat.completion.chunk','model': MODEL_ID,'choices': [{'delta': {'role': 'assistant'}}]})}\n\n".encode()
 
-            # Send dummy token immediately to prevent timeout
-            yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': 'Thinking... '}}]})}\n\n"
+            await asyncio.sleep(0.01)
+            yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': 'Thinking...'}}]})}\n\n".encode()
 
-            # Get model response
             ibm_response = await call_ibm_watsonx(prompt)
-
             if "results" not in ibm_response:
-                yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': '[Error] IBM response missing'}}]})}\n\n"
-                yield "data: [DONE]\n\n"
+                yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': '[Error from Watsonx]'}}]})}\n\n".encode()
+                yield b"data: [DONE]\n\n"
                 return
 
             full_text = ibm_response["results"][0].get("generated_text", "").strip()
-
             for word in full_text.split():
                 await asyncio.sleep(0.04)
-                yield f"data: {json.dumps({'object': 'chat.completion.chunk', 'choices': [{'delta': {'content': word + ' '}}]})}\n\n"
+                chunk = {"object": "chat.completion.chunk", "choices": [{"delta": {"content": word + " "}}]}
+                yield f"data: {json.dumps(chunk)}\n\n".encode()
 
-            yield "data: [DONE]\n\n"
+            yield b"data: [DONE]\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     except Exception as e:
         error_trace = traceback.format_exc()
-        print("Exception:", error_trace)
+        print("EXCEPTION:", error_trace)
         return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
