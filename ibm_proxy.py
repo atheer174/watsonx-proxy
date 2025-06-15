@@ -20,7 +20,7 @@ app.add_middleware(
 
 IBM_API_KEY = os.environ.get("IBM_API_KEY", "")
 PROJECT_ID = os.environ.get("PROJECT_ID", "")
-MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-2-70b-chat")
+MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-3-3-70b-instruct")
 
 async def call_ibm_watsonx(prompt):
     try:
