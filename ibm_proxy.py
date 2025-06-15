@@ -5,9 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
 import asyncio
-import time
 import json
-import traceback
+import time
 
 app = FastAPI()
 
@@ -20,7 +19,7 @@ app.add_middleware(
 
 IBM_API_KEY = os.environ.get("IBM_API_KEY", "")
 PROJECT_ID = os.environ.get("PROJECT_ID", "")
-MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-3-3-70b-instruct")
+MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-2-70b-chat")
 
 async def call_ibm_watsonx(prompt):
     iam_url = "https://iam.cloud.ibm.com/identity/token"
@@ -57,13 +56,14 @@ async def call_ibm_watsonx(prompt):
 async def chat_completions(request: Request):
     try:
         body = await request.json()
-        stream = body.pop("stream", False)
+        stream = body.get("stream", False)
+
         messages = body.get("messages", [])
         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
 
         if not stream:
-            ibm_response = await call_ibm_watsonx(prompt)
-            full_text = ibm_response["results"][0].get("generated_text", "").strip()
+            response = await call_ibm_watsonx(prompt)
+            full_text = response["results"][0].get("generated_text", "").strip()
             return {
                 "id": "chatcmpl-ibm",
                 "object": "chat.completion",
@@ -84,24 +84,24 @@ async def chat_completions(request: Request):
                 }
             }
 
-        # --- Streaming for Cursor ---
-        async def stream_response():
-            yield f"data: {json.dumps({'id': 'chatcmpl-stream','object': 'chat.completion.chunk','model': body.get('model', MODEL_ID),'choices': [{'delta': {'role': 'assistant'}}]})}\n\n"
-            yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': 'Thinking...'}}]})}\n\n"
+        async def event_stream():
+            # Required initial role message
+            yield f"data: {json.dumps({'id': 'chatcmpl-stream','object': 'chat.completion.chunk','model': MODEL_ID,'choices': [{'delta': {'role': 'assistant'}}]})}\n\n"
 
-            ibm_response = await call_ibm_watsonx(prompt)
-            full_text = ibm_response["results"][0].get("generated_text", "").strip()
+            # Immediate dummy content to prevent Cursor timeout
+            yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': 'Thinking... '}}]})}\n\n"
+
+            # Actual Watsonx call
+            response = await call_ibm_watsonx(prompt)
+            full_text = response["results"][0].get("generated_text", "").strip()
 
             for word in full_text.split():
-                await asyncio.sleep(0.03)
+                await asyncio.sleep(0.05)
                 yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': word + ' '}}]})}\n\n"
 
             yield "data: [DONE]\n\n"
 
-        return EventSourceResponse(stream_response(), media_type="text/event-stream")
+        return EventSourceResponse(event_stream())
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={
-            "error": str(e),
-            "trace": traceback.format_exc()
-        })
+        return JSONResponse(status_code=500, content={"error": str(e)})
