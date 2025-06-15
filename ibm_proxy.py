@@ -1,12 +1,10 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from sse_starlette.sse import EventSourceResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
-import asyncio
-import json
 import time
+import traceback
 
 app = FastAPI()
 
@@ -17,8 +15,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-IBM_API_KEY = os.environ.get("IBM_API_KEY", "")
-PROJECT_ID = os.environ.get("PROJECT_ID", "")
+IBM_API_KEY = os.environ["IBM_API_KEY"]
+PROJECT_ID = os.environ["PROJECT_ID"]
 MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-2-70b-chat")
 
 async def call_ibm_watsonx(prompt):
@@ -56,52 +54,40 @@ async def call_ibm_watsonx(prompt):
 async def chat_completions(request: Request):
     try:
         body = await request.json()
-        stream = body.get("stream", False)
+        # Ignore stream requests for now
+        body["stream"] = False
 
         messages = body.get("messages", [])
         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
 
-        if not stream:
-            response = await call_ibm_watsonx(prompt)
-            full_text = response["results"][0].get("generated_text", "").strip()
-            return {
-                "id": "chatcmpl-ibm",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": body.get("model", MODEL_ID),
-                "choices": [{
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": full_text
-                    },
-                    "finish_reason": "stop"
-                }],
-                "usage": {
-                    "prompt_tokens": 10,
-                    "completion_tokens": 15,
-                    "total_tokens": 25
-                }
+        ibm_response = await call_ibm_watsonx(prompt)
+
+        if "results" not in ibm_response:
+            return JSONResponse(status_code=500, content={"error": str(ibm_response)})
+
+        generated_text = ibm_response["results"][0].get("generated_text", "").strip()
+
+        return {
+            "id": "chatcmpl-ibm",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": body.get("model", MODEL_ID),
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": generated_text
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
             }
-
-        async def event_stream():
-            # Required initial role message
-            yield f"data: {json.dumps({'id': 'chatcmpl-stream','object': 'chat.completion.chunk','model': MODEL_ID,'choices': [{'delta': {'role': 'assistant'}}]})}\n\n"
-
-            # Immediate dummy content to prevent Cursor timeout
-            yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': 'Thinking... '}}]})}\n\n"
-
-            # Actual Watsonx call
-            response = await call_ibm_watsonx(prompt)
-            full_text = response["results"][0].get("generated_text", "").strip()
-
-            for word in full_text.split():
-                await asyncio.sleep(0.05)
-                yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': word + ' '}}]})}\n\n"
-
-            yield "data: [DONE]\n\n"
-
-        return EventSourceResponse(event_stream())
+        }
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        error_trace = traceback.format_exc()
+        print("Exception:", error_trace)
+        return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
