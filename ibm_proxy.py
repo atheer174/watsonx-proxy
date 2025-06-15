@@ -1,185 +1,3 @@
-# from fastapi import FastAPI, Request
-# from fastapi.responses import JSONResponse
-# from sse_starlette.sse import EventSourceResponse
-# from fastapi.middleware.cors import CORSMiddleware
-# import httpx
-# import os
-# import time
-# import asyncio
-# import traceback
-# import json
-
-# app = FastAPI()
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-# IBM_API_KEY = os.environ["IBM_API_KEY"]
-# PROJECT_ID = os.environ["PROJECT_ID"]
-# MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-2-70b-chat")
-
-# async def call_ibm_watsonx(prompt):
-#     iam_url = "https://iam.cloud.ibm.com/identity/token"
-#     token_headers = {
-#         "Content-Type": "application/x-www-form-urlencoded"
-#     }
-#     token_data = {
-#         "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
-#         "apikey": IBM_API_KEY
-#     }
-
-#     async with httpx.AsyncClient() as client:
-#         token_res = await client.post(iam_url, data=token_data, headers=token_headers)
-#         iam_token = token_res.json()["access_token"]
-
-#         url = "https://us-south.ml.cloud.ibm.com/ml/v1/text/generation?version=2024-05-14"
-#         headers = {
-#             "Authorization": f"Bearer {iam_token}",
-#             "Content-Type": "application/json",
-#         }
-#         payload = {
-#             "model_id": MODEL_ID,
-#             "project_id": PROJECT_ID,
-#             "parameters": {
-#                 "decoding_method": "greedy",
-#                 "max_new_tokens": 200,
-#                 "min_new_tokens": 1,
-#             },
-#             "input": prompt,
-#         }
-
-#         res = await client.post(url, json=payload, headers=headers)
-#         return res.json()
-
-# # @app.post("/v1/chat/completions")
-# # async def chat_completions(request: Request):
-# #     try:
-# #         body = await request.json()
-# #         stream = body.pop("stream", False)
-
-# #         messages = body.get("messages", [])
-# #         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-
-# #         if not stream:
-# #             ibm_response = await call_ibm_watsonx(prompt)
-# #             full_text = ibm_response["results"][0].get("generated_text", "").strip()
-# #             return {
-# #                 "id": "chatcmpl-ibm",
-# #                 "object": "chat.completion",
-# #                 "created": int(time.time()),
-# #                 "model": body.get("model", MODEL_ID),
-# #                 "choices": [{
-# #                     "index": 0,
-# #                     "message": {
-# #                         "role": "assistant",
-# #                         "content": full_text
-# #                     },
-# #                     "finish_reason": "stop"
-# #                 }],
-# #                 "usage": {
-# #                     "prompt_tokens": 10,
-# #                     "completion_tokens": 15,
-# #                     "total_tokens": 25
-# #                 }
-# #             }
-
-# #         # --- Streaming Fix with Queue ---
-# #         queue = asyncio.Queue()
-
-# #         async def produce_chunks():
-# #             try:
-# #                 await queue.put({
-# #                     "id": "chatcmpl-stream",
-# #                     "object": "chat.completion.chunk",
-# #                     "model": body.get("model", MODEL_ID),
-# #                     "choices": [{"delta": {"role": "assistant"}}]
-# #                 })
-
-# #                 await queue.put({
-# #                     "choices": [{"delta": {"content": "..."}}],
-# #                     "object": "chat.completion.chunk"
-# #                 })
-
-# #                 ibm_response = await call_ibm_watsonx(prompt)
-
-# #                 if "results" not in ibm_response:
-# #                     await queue.put({
-# #                         "choices": [{"delta": {"content": "[Error from IBM Watsonx]"}}],
-# #                         "object": "chat.completion.chunk"
-# #                     })
-# #                     await queue.put({
-# #                         "choices": [{"finish_reason": "stop"}],
-# #                         "object": "chat.completion.chunk"
-# #                     })
-# #                     return
-
-# #                 full_text = ibm_response["results"][0].get("generated_text", "").strip()
-
-# #                 for word in full_text.split():
-# #                     await asyncio.sleep(0.04)
-# #                     await queue.put({
-# #                         "choices": [{"delta": {"content": word + " "}}],
-# #                         "object": "chat.completion.chunk"
-# #                     })
-
-# #                 await queue.put({
-# #                     "choices": [{"finish_reason": "stop"}],
-# #                     "object": "chat.completion.chunk"
-# #                 })
-
-# #             except Exception as e:
-# #                 await queue.put({
-# #                     "error": str(e)
-# #                 })
-
-# #         async def stream_response():
-# #             task = asyncio.create_task(produce_chunks())
-# #             while True:
-# #                 try:
-# #                     chunk = await asyncio.wait_for(queue.get(), timeout=30)
-# #                     yield chunk
-# #                     if "finish_reason" in str(chunk):
-# #                         break
-# #                 except asyncio.TimeoutError:
-# #                     break
-# @app.post("/v1/chat/completions")
-# async def chat_completions(request: Request):
-#     async def stream_response():
-#         yield {
-#             "id": "test-123",
-#             "object": "chat.completion.chunk",
-#             "model": "debug-model",
-#             "choices": [{"delta": {"role": "assistant"}}]
-#         }
-#         yield {
-#             "object": "chat.completion.chunk",
-#             "choices": [{"delta": {"content": "Hi"}}]
-#         }
-#         await asyncio.sleep(0.2)
-#         yield {
-#             "object": "chat.completion.chunk",
-#             "choices": [{"delta": {"content": " there"}}]
-#         }
-#         await asyncio.sleep(0.2)
-#         yield {
-#             "object": "chat.completion.chunk",
-#             "choices": [{"finish_reason": "stop"}]
-#         }
-
-#     return EventSourceResponse(stream_response(), media_type="text/event-stream")
-
-#         # return EventSourceResponse(stream_response(), media_type="text/event-stream")
-
-#     except Exception as e:
-#         error_trace = traceback.format_exc()
-#         print("Exception:", error_trace)
-#         return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
-
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
@@ -187,6 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
 import asyncio
+import time
+import traceback
+import json
 
 app = FastAPI()
 
@@ -201,61 +22,115 @@ IBM_API_KEY = os.environ.get("IBM_API_KEY", "")
 PROJECT_ID = os.environ.get("PROJECT_ID", "")
 MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-2-70b-chat")
 
-# You can keep this for future use (not used in this test endpoint)
 async def call_ibm_watsonx(prompt):
-    iam_url = "https://iam.cloud.ibm.com/identity/token"
-    token_headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    token_data = {
-        "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
-        "apikey": IBM_API_KEY
-    }
-
-    async with httpx.AsyncClient() as client:
-        token_res = await client.post(iam_url, data=token_data, headers=token_headers)
-        iam_token = token_res.json()["access_token"]
-
-        url = "https://us-south.ml.cloud.ibm.com/ml/v1/text/generation?version=2024-05-14"
-        headers = {
-            "Authorization": f"Bearer {iam_token}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model_id": MODEL_ID,
-            "project_id": PROJECT_ID,
-            "parameters": {
-                "decoding_method": "greedy",
-                "max_new_tokens": 200,
-                "min_new_tokens": 1,
-            },
-            "input": prompt,
+    try:
+        iam_url = "https://iam.cloud.ibm.com/identity/token"
+        token_headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        token_data = {
+            "grant_type": "urn:ibm:params:oauth:grant-type:apikey",
+            "apikey": IBM_API_KEY
         }
 
-        res = await client.post(url, json=payload, headers=headers)
-        return res.json()
+        async with httpx.AsyncClient() as client:
+            token_res = await client.post(iam_url, data=token_data, headers=token_headers)
+            iam_token = token_res.json()["access_token"]
+
+            url = "https://us-south.ml.cloud.ibm.com/ml/v1/text/generation?version=2024-05-14"
+            headers = {
+                "Authorization": f"Bearer {iam_token}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model_id": MODEL_ID,
+                "project_id": PROJECT_ID,
+                "parameters": {
+                    "decoding_method": "greedy",
+                    "max_new_tokens": 200,
+                    "min_new_tokens": 1,
+                },
+                "input": prompt,
+            }
+
+            res = await client.post(url, json=payload, headers=headers)
+            return res.json()
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
-    async def stream_response():
-        yield {
-            "id": "test-123",
-            "object": "chat.completion.chunk",
-            "model": "debug-model",
-            "choices": [{"delta": {"role": "assistant"}}]
-        }
-        yield {
-            "object": "chat.completion.chunk",
-            "choices": [{"delta": {"content": "Hi"}}]
-        }
-        await asyncio.sleep(0.2)
-        yield {
-            "object": "chat.completion.chunk",
-            "choices": [{"delta": {"content": " there"}}]
-        }
-        await asyncio.sleep(0.2)
-        yield {
-            "object": "chat.completion.chunk",
-            "choices": [{"finish_reason": "stop"}]
-        }
+    try:
+        body = await request.json()
+        stream = body.get("stream", False)
+        messages = body.get("messages", [])
+        prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
 
-    return EventSourceResponse(stream_response(), media_type="text/event-stream")
+        if not stream:
+            result = await call_ibm_watsonx(prompt)
+            if "results" not in result:
+                return JSONResponse(status_code=500, content={"error": result})
+            full_text = result["results"][0].get("generated_text", "")
+            return {
+                "id": "chatcmpl-ibm",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": MODEL_ID,
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": full_text
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 15,
+                    "total_tokens": 25
+                }
+            }
 
+        # ---- Streaming path ----
+        async def event_stream():
+            yield {
+                "id": "chatcmpl-stream",
+                "object": "chat.completion.chunk",
+                "model": MODEL_ID,
+                "choices": [{"delta": {"role": "assistant"}}]
+            }
+
+            yield {
+                "object": "chat.completion.chunk",
+                "choices": [{"delta": {"content": "Thinking..."}}]
+            }
+
+            result = await call_ibm_watsonx(prompt)
+            if "results" not in result:
+                yield {
+                    "object": "chat.completion.chunk",
+                    "choices": [{"delta": {"content": "[Error from Watsonx]"}}]
+                }
+                yield {
+                    "object": "chat.completion.chunk",
+                    "choices": [{"finish_reason": "stop"}]
+                }
+                return
+
+            full_text = result["results"][0].get("generated_text", "")
+            for word in full_text.split():
+                await asyncio.sleep(0.04)
+                yield {
+                    "object": "chat.completion.chunk",
+                    "choices": [{"delta": {"content": word + " "}}]
+                }
+
+            yield {
+                "object": "chat.completion.chunk",
+                "choices": [{"finish_reason": "stop"}]
+            }
+
+        return EventSourceResponse(event_stream(), media_type="text/event-stream")
+
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        print("EXCEPTION:", error_trace)
+        return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
