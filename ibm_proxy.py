@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
 import asyncio
-import json
 import time
+import json
 import traceback
 
 app = FastAPI()
@@ -56,7 +57,7 @@ async def call_ibm_watsonx(prompt):
 async def chat_completions(request: Request):
     try:
         body = await request.json()
-        stream = body.get("stream", False)
+        stream = body.pop("stream", False)
         messages = body.get("messages", [])
         prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
 
@@ -83,29 +84,24 @@ async def chat_completions(request: Request):
                 }
             }
 
-        async def event_generator():
-            yield f"data: {json.dumps({'id': 'chatcmpl-stream','object': 'chat.completion.chunk','model': MODEL_ID,'choices': [{'delta': {'role': 'assistant'}}]})}\n\n".encode()
-
-            await asyncio.sleep(0.01)
-            yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': 'Thinking...'}}]})}\n\n".encode()
+        # --- Streaming for Cursor ---
+        async def stream_response():
+            yield f"data: {json.dumps({'id': 'chatcmpl-stream','object': 'chat.completion.chunk','model': body.get('model', MODEL_ID),'choices': [{'delta': {'role': 'assistant'}}]})}\n\n"
+            yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': 'Thinking...'}}]})}\n\n"
 
             ibm_response = await call_ibm_watsonx(prompt)
-            if "results" not in ibm_response:
-                yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': '[Error from Watsonx]'}}]})}\n\n".encode()
-                yield b"data: [DONE]\n\n"
-                return
-
             full_text = ibm_response["results"][0].get("generated_text", "").strip()
+
             for word in full_text.split():
-                await asyncio.sleep(0.04)
-                chunk = {"object": "chat.completion.chunk", "choices": [{"delta": {"content": word + " "}}]}
-                yield f"data: {json.dumps(chunk)}\n\n".encode()
+                await asyncio.sleep(0.03)
+                yield f"data: {json.dumps({'object': 'chat.completion.chunk','choices': [{'delta': {'content': word + ' '}}]})}\n\n"
 
-            yield b"data: [DONE]\n\n"
+            yield "data: [DONE]\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return EventSourceResponse(stream_response(), media_type="text/event-stream")
 
     except Exception as e:
-        error_trace = traceback.format_exc()
-        print("EXCEPTION:", error_trace)
-        return JSONResponse(status_code=500, content={"error": str(e), "trace": error_trace})
+        return JSONResponse(status_code=500, content={
+            "error": str(e),
+            "trace": traceback.format_exc()
+        })
