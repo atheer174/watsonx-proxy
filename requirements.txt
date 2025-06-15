@@ -1,4 +1,3 @@
-fastapi
-uvicorn
-httpx
-sse-starlette
+flask
+transformers
+torch  # or tensorflow if model uses TF backend
