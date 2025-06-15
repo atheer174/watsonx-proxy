@@ -17,7 +17,7 @@ app.add_middleware(
 
 IBM_API_KEY = os.environ["IBM_API_KEY"]
 PROJECT_ID = os.environ["PROJECT_ID"]
-MODEL_ID = os.environ.get("MODEL_ID", "meta-llama/llama-2-70b-chat")
+MODEL_ID = os.environ.get("MODEL_ID", "mistralai/Mistral-Small-3.1-24B-Instruct-2503")
 
 async def call_ibm_watsonx(prompt):
     iam_url = "https://iam.cloud.ibm.com/identity/token"
